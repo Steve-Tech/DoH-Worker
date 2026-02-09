@@ -33,7 +33,7 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
 
     // Read the DNS response length
     let firstChunk = await dns_reader.read();
-    if (firstChunk.done) {
+    if (!firstChunk.value || firstChunk.value.length < 2) {
       throw new Error("No response received from DNS server");
     }
     let dns_length = (firstChunk.value[0] << 8) | firstChunk.value[1];
@@ -62,7 +62,7 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === "/") {
       // Redirect to the GitHub repository for the project
-      return Response.redirect("https://github.com/Steve-Tech/doh-worker", 302);
+      return Response.redirect("https://github.com/Steve-Tech/DoH-Worker", 302);
     } else if (url.pathname !== "/dns-query") {
       // If the path is not "/dns-query", treat it as the DNS server address
       server = decodeURIComponent(url.pathname.substring(1));

@@ -13,9 +13,9 @@
 
 import { connect } from 'cloudflare:sockets';
 
-let server = "one.one.one.one";
+const DEFAULT_SERVER = "9.9.9.9";
 
-async function dns_query(query: ReadableStream, length: number): Promise<Response> {
+async function dns_query(server: string, query: ReadableStream, length: number): Promise<Response> {
   const dns_socket = connect({ hostname: server, port: 53 });
   const dns_writer = dns_socket.writable.getWriter();
   const dns_reader = dns_socket.readable.getReader();
@@ -60,12 +60,16 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
 export default {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+    let server = DEFAULT_SERVER;
     if (url.pathname === "/") {
       // Redirect to the GitHub repository for the project
       return Response.redirect("https://github.com/Steve-Tech/DoH-Worker", 302);
     } else if (url.pathname !== "/dns-query") {
       // If the path is not "/dns-query", treat it as the DNS server address
-      server = decodeURIComponent(url.pathname.substring(1));
+      // but ignore any additional path segments after the server address
+      let path = url.pathname.substring(1)
+      let end = path.indexOf("/");
+      server = decodeURIComponent(path.substring(0, end));
     }
 
     if (req.method === "GET") {
@@ -84,7 +88,7 @@ export default {
           }
         });
 
-        return dns_query(dnsStream, dnsQuery.length);
+        return dns_query(server, dnsStream, dnsQuery.length);
       } catch (error) {
         return new Response("Invalid 'dns' query parameter: " + error, { status: 400 });
       }
@@ -103,7 +107,7 @@ export default {
         return new Response("Invalid Content-Length header", { status: 400 });
       }
 
-      return dns_query(req.body, length);
+      return dns_query(server, req.body, length);
     } else {
       console.warn(`Received unsupported method: ${req.method}`);
       return new Response("Method not allowed", { status: 405 });

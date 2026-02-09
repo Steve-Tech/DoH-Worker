@@ -11,8 +11,72 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import { connect } from 'cloudflare:sockets';
+
+const server = "1.1.1.1";
+
+async function dns_query(query: ReadableStream, length: number): Promise<Response> {
+  const dns_socket = connect({ hostname: server, port: 53 });
+  const dns_writer = dns_socket.writable.getWriter();
+  const dns_reader = dns_socket.readable.getReader();
+  try {
+    // Write the DNS query length
+    dns_writer.write(new Uint8Array([(length >> 8) & 0xFF, length & 0xFF]));
+
+    // Pipe the DNS query to the server
+    await query.pipeTo(new WritableStream({
+      write(chunk) {
+        return dns_writer.write(chunk);
+      }
+    }));
+    dns_writer.close();
+
+    // Read the DNS response length
+    let firstChunk = await dns_reader.read();
+    if (firstChunk.done) {
+      throw new Error("No response received from DNS server");
+    }
+    let dns_length = (firstChunk.value[0] << 8) | firstChunk.value[1];
+
+    // Create a stream to pipe the DNS response back to the client
+    const dns_response = new FixedLengthStream(dns_length);
+    const response_writer = dns_response.writable.getWriter();
+
+    // Write the first chunk of the DNS response (after the length bytes)
+    response_writer.write(firstChunk.value.subarray(2)).then(async () => {
+      await response_writer.releaseLock();
+      await dns_reader.releaseLock();
+      // Pipe the rest of the DNS response to the client
+      await dns_socket.readable.pipeTo(dns_response.writable);
+    });
+
+    return new Response(dns_response.readable, { headers: { "Content-Type": "application/dns-message" } });
+  } catch (error) {
+    return new Response("Socket connection failed: " + error, { status: 500 });
+  }
+}
+
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
-	},
-} satisfies ExportedHandler<Env>;
+  async fetch(req: Request): Promise<Response> {
+    if (req.method === "POST") {
+      if (!req.body) {
+        return new Response("No body provided", { status: 400 });
+      }
+
+      const lengthHeader = req.headers.get("Content-Length");
+      if (!lengthHeader) {
+        return new Response("Content-Length header is required", { status: 411 });
+      }
+
+      const length = parseInt(lengthHeader, 10);
+      if (isNaN(length) || length <= 0) {
+        return new Response("Invalid Content-Length header", { status: 400 });
+      }
+
+      return dns_query(req.body, length);
+    } else {
+      console.warn(`Received unsupported method: ${req.method}`);
+      return new Response("Method not allowed", { status: 405 });
+    }
+  },
+} satisfies ExportedHandler;

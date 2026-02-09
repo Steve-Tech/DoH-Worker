@@ -30,7 +30,6 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
         return dns_writer.write(chunk);
       }
     }));
-    dns_writer.close();
 
     // Read the DNS response length
     let firstChunk = await dns_reader.read();

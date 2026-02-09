@@ -44,10 +44,11 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
 
     // Write the first chunk of the DNS response (after the length bytes)
     response_writer.write(firstChunk.value.subarray(2)).then(async () => {
-      await response_writer.releaseLock();
-      await dns_reader.releaseLock();
+      response_writer.releaseLock();
+      dns_reader.releaseLock();
       // Pipe the rest of the DNS response to the client
       await dns_socket.readable.pipeTo(dns_response.writable);
+      dns_socket.close();
     });
 
     return new Response(dns_response.readable, { headers: { "Content-Type": "application/dns-message" } });
@@ -58,7 +59,27 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
 
 export default {
   async fetch(req: Request): Promise<Response> {
-    if (req.method === "POST") {
+    if (req.method === "GET") {
+      const url = new URL(req.url);
+      const dnsParam = url.searchParams.get("dns");
+      if (!dnsParam) {
+        return new Response("Missing 'dns' query parameter", { status: 400 });
+      }
+
+      try {
+        const dnsQuery = Uint8Array.from(atob(dnsParam), c => c.charCodeAt(0));
+        const dnsStream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(dnsQuery);
+            controller.close();
+          }
+        });
+
+        return dns_query(dnsStream, dnsQuery.length);
+      } catch (error) {
+        return new Response("Invalid 'dns' query parameter: " + error, { status: 400 });
+      }
+    } else if (req.method === "POST") {
       if (!req.body) {
         return new Response("No body provided", { status: 400 });
       }

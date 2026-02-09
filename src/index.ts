@@ -13,7 +13,7 @@
 
 import { connect } from 'cloudflare:sockets';
 
-const server = "1.1.1.1";
+let server = "one.one.one.one";
 
 async function dns_query(query: ReadableStream, length: number): Promise<Response> {
   const dns_socket = connect({ hostname: server, port: 53 });
@@ -59,15 +59,24 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
 
 export default {
   async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname === "/") {
+      // Redirect to the GitHub repository for the project
+      return Response.redirect("https://github.com/Steve-Tech/doh-worker", 302);
+    } else if (url.pathname !== "/dns-query") {
+      // If the path is not "/dns-query", treat it as the DNS server address
+      server = decodeURIComponent(url.pathname.substring(1));
+    }
+
     if (req.method === "GET") {
-      const url = new URL(req.url);
       const dnsParam = url.searchParams.get("dns");
       if (!dnsParam) {
         return new Response("Missing 'dns' query parameter", { status: 400 });
       }
 
       try {
-        const dnsQuery = Uint8Array.from(atob(dnsParam), c => c.charCodeAt(0));
+        const dnsQuery = Uint8Array.from(
+          atob(dnsParam.replace('_', '/').replace('-', '+')), c => c.charCodeAt(0));
         const dnsStream = new ReadableStream({
           start(controller) {
             controller.enqueue(dnsQuery);

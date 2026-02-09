@@ -69,6 +69,7 @@ export default {
       // but ignore any additional path segments after the server address
       let path = url.pathname.substring(1)
       let end = path.indexOf("/");
+      if (end === -1) end = path.length;
       server = decodeURIComponent(path.substring(0, end));
     }
 

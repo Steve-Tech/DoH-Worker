@@ -20,6 +20,7 @@ async function dns_query(query: ReadableStream, length: number): Promise<Respons
   const dns_writer = dns_socket.writable.getWriter();
   const dns_reader = dns_socket.readable.getReader();
   try {
+    await dns_socket.opened;
     // Write the DNS query length
     dns_writer.write(new Uint8Array([(length >> 8) & 0xFF, length & 0xFF]));
 
